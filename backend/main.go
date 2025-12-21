@@ -219,26 +219,26 @@ func cors(next http.Handler) http.Handler {
 			return
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
+		allowed := os.Getenv("FRONTEND_ORIGIN") // e.g. https://your-frontend.vercel.app
+		if allowed != "" && origin == allowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		reqHeaders := r.Header.Get("Access-Control-Request-Headers")
-		if reqHeaders == "" {
-			reqHeaders = "Content-Type, Authorization"
-		}
-		w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
-
-		if r.Method != http.MethodOptions {
-			w.Header().Set("Content-Type", "application/json")
-		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		w.Header().Set("Content-Type", "application/json")
 		next.ServeHTTP(w, r)
 	})
 }
+
 
 // ---------- /topics ----------
 func topicsHandler(w http.ResponseWriter, r *http.Request) {
