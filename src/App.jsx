@@ -5,6 +5,7 @@ import CreateTopic from "./pages/CreateTopic";
 import Topic from "./pages/Topic";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import.meta.env.VITE_API_URL;
 
 function App() {
   const [topics, setTopics] = useState([]);
@@ -25,7 +26,7 @@ function App() {
 
   // Fetch topics (public)
   useEffect(() => {
-    fetch("http://localhost:5000/topics")
+    fetch(`${import.meta.env.VITE_API_URL}/topics`)
       .then((res) => res.json())
       .then((data) => setTopics(Array.isArray(data) ? data : []))
       .catch((err) => console.error(err));
@@ -37,7 +38,7 @@ function App() {
     const token = auth?.token;
     if (!token) return;
 
-    const res = await fetch(`http://localhost:5000/topics/${id}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/topics/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });

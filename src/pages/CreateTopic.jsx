@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import.meta.env.VITE_API_URL;
 
 function CreateTopic({ addTopic, auth }) {
   const [title, setTitle] = useState("");
@@ -22,7 +23,7 @@ function CreateTopic({ addTopic, auth }) {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/topics", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/topics`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

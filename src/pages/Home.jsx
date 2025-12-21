@@ -3,6 +3,7 @@ import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import { useNavigate } from "react-router-dom";
 
+
 function Home({ topics, deleteTopic, updateTopic, auth, setAuth }) {
   const navigate = useNavigate();
   const user = auth?.user;

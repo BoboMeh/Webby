@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
+import.meta.env.VITE_API_URL;
 
 function Topic({ auth }) {
   const { id } = useParams();
@@ -24,11 +25,11 @@ function Topic({ auth }) {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const tRes = await fetch(`http://localhost:5000/topics/${id}`);
+      const tRes = await fetch(`${import.meta.env.VITE_API_URL}/topics/${id}`);
       const tData = tRes.ok ? await tRes.json() : null;
       setTopic(tData);
 
-      const rRes = await fetch(`http://localhost:5000/replies?topic_id=${id}`);
+      const rRes = await fetch(`${import.meta.env.VITE_API_URL}/replies?topic_id=${id}`);
       const rData = rRes.ok ? await rRes.json() : [];
       setReplies(Array.isArray(rData) ? rData : []);
     } catch {
@@ -62,7 +63,7 @@ function Topic({ auth }) {
   const saveTopic = async () => {
     if (!token) return navigate("/login");
 
-    const res = await fetch(`http://localhost:5000/topics/${id}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/topics/${id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -82,7 +83,7 @@ function Topic({ auth }) {
     if (!token) return navigate("/login");
     if (!window.confirm("Delete this topic?")) return;
 
-    const res = await fetch(`http://localhost:5000/topics/${id}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/topics/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -97,7 +98,7 @@ function Topic({ auth }) {
     if (!token) return navigate("/login");
     if (!newReply.trim()) return;
 
-    const res = await fetch("http://localhost:5000/replies", {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/replies`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -126,7 +127,7 @@ function Topic({ auth }) {
   const saveEditReply = async (replyId) => {
     if (!token) return navigate("/login");
 
-    const res = await fetch(`http://localhost:5000/replies/${replyId}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/replies/${replyId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -147,7 +148,7 @@ function Topic({ auth }) {
     if (!token) return navigate("/login");
     if (!window.confirm("Delete this reply?")) return;
 
-    const res = await fetch(`http://localhost:5000/replies/${replyId}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/replies/${replyId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
