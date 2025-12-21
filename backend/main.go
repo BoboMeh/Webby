@@ -207,8 +207,13 @@ func main() {
 	handler := cors(mux)
 
 	log.Println("🚀 API running at http://localhost:5000")
-	log.Fatal(http.ListenAndServe(":5000", handler))
-}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "5000"
+	}
+	log.Fatal(http.ListenAndServe(":"+port, handler))
+
+	}
 
 // ---------- CORS ----------
 func cors(next http.Handler) http.Handler {
