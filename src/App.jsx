@@ -51,7 +51,7 @@ function App() {
     const token = auth?.token;
     if (!token) return;
 
-    const res = await fetch(`http://localhost:5000/topics/${topic.id}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/topics/${topic.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
