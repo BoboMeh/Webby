@@ -216,29 +216,56 @@ func main() {
 	}
 
 // ---------- CORS ----------
+// func cors(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		origin := r.Header.Get("Origin")
+// 		if origin == "" {
+// 			next.ServeHTTP(w, r)
+// 			return
+// 		}
+
+// 		allowed := os.Getenv("FRONTEND_ORIGIN") // e.g. https://your-frontend.vercel.app
+// 		if allowed != "" && origin == allowed {
+// 			w.Header().Set("Access-Control-Allow-Origin", origin)
+// 			w.Header().Set("Vary", "Origin")
+// 		}
+
+
+// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+// 		if r.Method == http.MethodOptions {
+// 			w.WriteHeader(http.StatusOK)
+// 			return
+// 		}
+
+// 		w.Header().Set("Content-Type", "application/json")
+// 		next.ServeHTTP(w, r)
+// 	})
+// }
+
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
+		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
 
-		allowed := os.Getenv("FRONTEND_ORIGIN") // e.g. https://your-frontend.vercel.app
-		if allowed != "" && origin == allowed {
+		allowed1 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")
+		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/") // optional
+
+		// Allow when origin matches
+		if origin != "" && (origin == allowed1 || (allowed2 != "" && origin == allowed2)) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 
-
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
+		// Always respond to preflight
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
+		// Content type for JSON APIs
 		w.Header().Set("Content-Type", "application/json")
 		next.ServeHTTP(w, r)
 	})
