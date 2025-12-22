@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"os"
+	"github.com/lib/pq"
 
 	"golang.org/x/crypto/bcrypt"
 	_ "github.com/lib/pq"
@@ -630,10 +631,23 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 	).Scan(&user.ID, &user.CreatedAt)
 
 	if err != nil {
+		// Handle duplicate username/email
+		if pqErr, ok := err.(*pq.Error); ok {
+			if pqErr.Constraint == "users_username_key" {
+				http.Error(w, "Username already exists", http.StatusConflict)
+				return
+			}
+			if pqErr.Constraint == "users_email_key" {
+				http.Error(w, "Email already exists", http.StatusConflict)
+				return
+			}
+		}
+
 		log.Println("REGISTER DB ERROR:", err)
-		http.Error(w, err.Error(), 500)
+		http.Error(w, "Failed to create account", http.StatusInternalServerError)
 		return
 	}
+
 
 	user.Password = ""
 	json.NewEncoder(w).Encode(user)
