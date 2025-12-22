@@ -16,11 +16,6 @@ function Header() {
 
         {/* Right: Avatar + Buttons (NO GAP) */}
         <div className="flex items-center gap-2">
-          <img
-            src="../src/assets/react.svg"
-            alt="User Avatar"
-            className="w-8 h-8 rounded-full cursor-pointer"
-          />
 
           <button
             onClick={() => navigate("/login")}
