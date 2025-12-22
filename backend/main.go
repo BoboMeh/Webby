@@ -251,25 +251,35 @@ func cors(next http.Handler) http.Handler {
 		allowed1 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")
 		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/") // optional
 
-		// Allow when origin matches
-		if origin != "" && (origin == allowed1 || (allowed2 != "" && origin == allowed2)) {
+		isAllowed := origin != "" && (origin == allowed1 || (allowed2 != "" && origin == allowed2))
+
+		if origin != "" && isAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 
-		// Always respond to preflight
+		// Preflight
 		if r.Method == http.MethodOptions {
+			if !isAllowed {
+				http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		// Content type for JSON APIs
+		if origin != "" && !isAllowed {
+			http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		next.ServeHTTP(w, r)
 	})
 }
+
 
 
 // ---------- /topics ----------
