@@ -211,6 +211,21 @@ func main() {
 	if port == "" {
 		port = "5000"
 	}
+
+	mux.HandleFunc("/debug-origin", func(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	allowed := os.Getenv("FRONTEND_ORIGIN")
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"origin_raw":       origin,
+		"origin_trimmed":   strings.TrimRight(origin, "/"),
+		"allowed_raw":      allowed,
+		"allowed_trimmed":  strings.TrimRight(allowed, "/"),
+		"method":           r.Method,
+	})
+})
+
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 
 	}
