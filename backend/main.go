@@ -232,39 +232,33 @@ func main() {
 
 // ---------- CORS ----------
 func cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
+  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		allowed1 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")
-		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/")
+    origin := r.Header.Get("Origin")
 
-		isAllowed := origin != "" && (origin == allowed1 || (allowed2 != "" && origin == allowed2))
+    allowed := map[string]bool{
+      "https://webby-frontend.onrender.com": true,
+      "http://localhost:5173": true,
+    }
 
-		if origin != "" && isAllowed {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		}
+    if origin != "" && allowed[origin] {
+      w.Header().Set("Access-Control-Allow-Origin", origin)
+      w.Header().Set("Vary", "Origin")
+      w.Header().Set("Access-Control-Allow-Credentials", "true")
+    }
 
-		if r.Method == http.MethodOptions {
-			if !isAllowed {
-				http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		if origin != "" && !isAllowed {
-			http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
-			return
-		}
+    if r.Method == http.MethodOptions {
+      w.WriteHeader(http.StatusNoContent)
+      return
+    }
 
-		w.Header().Set("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
+    next.ServeHTTP(w, r)
+  })
 }
+
 
 // ---------- /topics ----------
 func topicsHandler(w http.ResponseWriter, r *http.Request) {

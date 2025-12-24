@@ -12,18 +12,26 @@ function Header({ user, onLogout, setAuth }) {
     setQuery("");
   };
 
-  // dropdown
+  // dropdown open/close
   const [open, setOpen] = useState(false);
-  const dropdownRef = useRef(null);
+
+  // ✅ separate refs (avoid conflicts between mobile/desktop versions)
+  const mobileDropdownRef = useRef(null);
+  const desktopDropdownRef = useRef(null);
 
   useEffect(() => {
     const onClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      const inMobile =
+        mobileDropdownRef.current && mobileDropdownRef.current.contains(e.target);
+      const inDesktop =
+        desktopDropdownRef.current && desktopDropdownRef.current.contains(e.target);
+
+      if (!inMobile && !inDesktop) setOpen(false);
     };
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
+
+    // ✅ better for mobile than "mousedown"
+    document.addEventListener("pointerdown", onClickOutside);
+    return () => document.removeEventListener("pointerdown", onClickOutside);
   }, []);
 
   const initials = (user?.name || user?.username || "U")
@@ -36,22 +44,59 @@ function Header({ user, onLogout, setAuth }) {
   const doLogout = () => {
     setOpen(false);
 
+    // Prefer parent handler (best)
     if (onLogout) return onLogout();
 
+    // ✅ mobile-safe fallback logout
     localStorage.removeItem("auth");
+    sessionStorage.clear();
     setAuth?.(null);
-    navigate("/login");
+    window.location.href = "/login"; // hard redirect fixes mobile "stuck auth"
+  };
+
+  const uploadAvatar = async (file) => {
+    if (!file) return;
+
+    const auth = JSON.parse(localStorage.getItem("auth") || "null");
+    const token = auth?.token;
+    if (!token) {
+      alert("Please log in again.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("avatar", file);
+
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/me/avatar`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      alert(await res.text());
+      return;
+    }
+
+    const data = await res.json();
+
+    const updatedAuth = {
+      ...auth,
+      user: { ...auth.user, avatar_url: data.avatar_url },
+    };
+
+    localStorage.setItem("auth", JSON.stringify(updatedAuth));
+    setAuth?.(updatedAuth);
+    setOpen(false);
   };
 
   return (
     <header className="bg-blue-100 border-b border-blue-200">
-      {/* ✅ responsive padding */}
       <div className="mx-auto px-3 sm:px-4 py-3">
-        {/* ✅ stack on mobile, row on bigger screens */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           {/* Top row (mobile): Logo + right actions */}
           <div className="flex items-center justify-between gap-3">
-            {/* Left: App Name */}
+            {/* Logo */}
             <div
               onClick={() => navigate("/")}
               className="text-[#1D4ED8] ml-1 sm:ml-4 font-bold text-3xl sm:text-4xl cursor-pointer whitespace-nowrap"
@@ -59,7 +104,7 @@ function Header({ user, onLogout, setAuth }) {
               Webby
             </div>
 
-            {/* ✅ Right actions on mobile */}
+            {/* Right actions on mobile */}
             {!user ? (
               <div className="flex items-center gap-2 whitespace-nowrap sm:hidden">
                 <button
@@ -68,7 +113,6 @@ function Header({ user, onLogout, setAuth }) {
                 >
                   Login
                 </button>
-
                 <button
                   onClick={() => navigate("/register")}
                   className="px-3 py-2 text-sm bg-[#2563EB] text-white rounded hover:bg-[#1D4ED8]"
@@ -77,7 +121,7 @@ function Header({ user, onLogout, setAuth }) {
                 </button>
               </div>
             ) : (
-              <div className="relative sm:hidden" ref={dropdownRef}>
+              <div className="relative sm:hidden" ref={mobileDropdownRef}>
                 <button
                   type="button"
                   onClick={() => setOpen((v) => !v)}
@@ -122,56 +166,14 @@ function Header({ user, onLogout, setAuth }) {
                       </p>
                     </div>
 
-                    <label className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                    {/* ✅ Mobile-safe file input (NOT display:none) */}
+                    <label className="relative block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
                       Upload photo
                       <input
                         type="file"
                         accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-
-                          const auth = JSON.parse(
-                            localStorage.getItem("auth") || "null"
-                          );
-                          const token = auth?.token;
-                          if (!token) return;
-
-                          const formData = new FormData();
-                          formData.append("avatar", file);
-
-                          const res = await fetch(
-                            `${import.meta.env.VITE_API_URL}/me/avatar`,
-                            {
-                              method: "POST",
-                              headers: { Authorization: `Bearer ${token}` },
-                              body: formData,
-                            }
-                          );
-
-                          if (!res.ok) {
-                            alert(await res.text());
-                            return;
-                          }
-
-                          const data = await res.json();
-
-                          const updatedAuth = {
-                            ...auth,
-                            user: {
-                              ...auth.user,
-                              avatar_url: data.avatar_url,
-                            },
-                          };
-
-                          localStorage.setItem(
-                            "auth",
-                            JSON.stringify(updatedAuth)
-                          );
-                          setAuth?.(updatedAuth);
-                          setOpen(false);
-                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        onChange={(e) => uploadAvatar(e.target.files?.[0])}
                       />
                     </label>
 
@@ -188,7 +190,7 @@ function Header({ user, onLogout, setAuth }) {
             )}
           </div>
 
-          {/* ✅ Search bar: full width on mobile */}
+          {/* Search bar */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -216,7 +218,7 @@ function Header({ user, onLogout, setAuth }) {
             </div>
           </form>
 
-          {/* ✅ Right actions on desktop */}
+          {/* Right actions on desktop */}
           {!user ? (
             <div className="hidden sm:flex items-center gap-2 whitespace-nowrap">
               <button
@@ -234,7 +236,7 @@ function Header({ user, onLogout, setAuth }) {
               </button>
             </div>
           ) : (
-            <div className="hidden sm:block relative" ref={dropdownRef}>
+            <div className="hidden sm:block relative" ref={desktopDropdownRef}>
               <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
@@ -279,53 +281,14 @@ function Header({ user, onLogout, setAuth }) {
                     </p>
                   </div>
 
-                  <label className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                  {/* ✅ Mobile-safe too (works everywhere) */}
+                  <label className="relative block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
                     Upload photo
                     <input
                       type="file"
                       accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-
-                        const auth = JSON.parse(
-                          localStorage.getItem("auth") || "null"
-                        );
-                        const token = auth?.token;
-                        if (!token) return;
-
-                        const formData = new FormData();
-                        formData.append("avatar", file);
-
-                        const res = await fetch(
-                          `${import.meta.env.VITE_API_URL}/me/avatar`,
-                          {
-                            method: "POST",
-                            headers: { Authorization: `Bearer ${token}` },
-                            body: formData,
-                          }
-                        );
-
-                        if (!res.ok) {
-                          alert(await res.text());
-                          return;
-                        }
-
-                        const data = await res.json();
-
-                        const updatedAuth = {
-                          ...auth,
-                          user: {
-                            ...auth.user,
-                            avatar_url: data.avatar_url,
-                          },
-                        };
-
-                        localStorage.setItem("auth", JSON.stringify(updatedAuth));
-                        setAuth?.(updatedAuth);
-                        setOpen(false);
-                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={(e) => uploadAvatar(e.target.files?.[0])}
                     />
                   </label>
 
