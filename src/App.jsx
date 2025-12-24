@@ -5,6 +5,7 @@ import CreateTopic from "./pages/CreateTopic";
 import Topic from "./pages/Topic";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Search from "./pages/Search";
 import.meta.env.VITE_API_URL;
 
 function App() {
@@ -88,8 +89,10 @@ function App() {
         path="/create-topic"
         element={<CreateTopic addTopic={addTopic} auth={auth} />}
       />
+      
+      <Route path="/search" element={<Search />} />
 
-      <Route path="/topic/:id" element={<Topic auth={auth} />} />
+      <Route path="/topic/:id" element={<Topic auth={auth} setAuth={setAuth}  />} />
 
       <Route path="/login" element={<Login setAuth={setAuth} />} />
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
+import Header from "../components/Header";
 import.meta.env.VITE_API_URL;
 
 export default function Register() {
@@ -38,6 +39,7 @@ export default function Register() {
   };
 
   return (
+    <><Header />
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="w-[350px] rounded-md shadow-md p-6">
         <h2 className="text-2xl font-semibold mb-6">Sign Up</h2>
@@ -49,16 +51,14 @@ export default function Register() {
           placeholder="Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-yellow-400"
-        />
+          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400" />
 
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-yellow-400"
-        />
+          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400" />
 
         <div className="relative mb-4">
           <input
@@ -66,8 +66,7 @@ export default function Register() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-yellow-400"
-          />
+            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400" />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
@@ -91,6 +90,6 @@ export default function Register() {
           </Link>
         </p>
       </div>
-    </div>
+    </div></>
   );
 }

@@ -8,49 +8,51 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-	"os"
-	"github.com/lib/pq"
 
-	"golang.org/x/crypto/bcrypt"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var db *sql.DB
-
-// TODO: Move to env var
-// var jwtSecret = []byte("CHANGE_ME_TO_SOMETHING_RANDOM_AND_LONG")
 var jwtSecret []byte
 
-
-// ---------- Models ----------
+// ---------- Models (✅ created_at returned as ISO string with timezone) ----------
 type Topic struct {
-	ID         int       `json:"id"`
-	Title      string    `json:"title"`
-	Content    string    `json:"content"`
-	UserID     int       `json:"user_id"`
-	AuthorName string    `json:"author_name"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID              int    `json:"id"`
+	Title           string `json:"title"`
+	Content         string `json:"content"`
+	UserID          int    `json:"user_id"`
+	AuthorName      string `json:"author_name"`
+	AuthorAvatarURL string `json:"author_avatar_url"`
+	CreatedAt       string `json:"created_at"` // ✅ ISO string, e.g. 2025-12-22T14:57:10Z
+	ReplyCount      int    `json:"reply_count"`
 }
 
 type Reply struct {
-	ID         int       `json:"id"`
-	TopicID    int       `json:"topic_id"`
-	Content    string    `json:"content"`
-	UserID     int       `json:"user_id"`
-	AuthorName string    `json:"author_name"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID              int    `json:"id"`
+	TopicID         int    `json:"topic_id"`
+	Content         string `json:"content"`
+	UserID          int    `json:"user_id"`
+	AuthorName      string `json:"author_name"`
+	AuthorAvatarURL string `json:"author_avatar_url"`
+	CreatedAt       string `json:"created_at"` // ✅ ISO string
 }
 
 type User struct {
 	ID        int       `json:"id"`
-	Username  string    `json:"name"`     // frontend sends "name"
+	Username  string    `json:"name"` // frontend sends "name"
 	Email     string    `json:"email"`
+	AvatarURL string    `json:"avatar_url"`
 	Password  string    `json:"password"` // input only
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -62,6 +64,7 @@ type LoginRequest struct {
 
 // ---------- Auth helpers ----------
 type ctxKey string
+
 const ctxUserID ctxKey = "userID"
 
 type tokenPayload struct {
@@ -78,7 +81,7 @@ func sign(data string) string {
 func makeToken(userID int) (string, error) {
 	pl := tokenPayload{
 		UserID: userID,
-		Exp:    time.Now().Add(24 * time.Hour).Unix(), // token lifetime
+		Exp:    time.Now().Add(24 * time.Hour).Unix(),
 	}
 	b, err := json.Marshal(pl)
 	if err != nil {
@@ -142,12 +145,10 @@ func getUserID(r *http.Request) int {
 
 // ---------- main ----------
 func main() {
-	// ✅ Load .env first (local dev)
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found (using system env vars)")
 	}
 
-	// ✅ Now read env vars
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		log.Fatal("DATABASE_URL is not set")
@@ -170,12 +171,11 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Public auth routes
+	// Auth
 	mux.Handle("/register", http.HandlerFunc(signupHandler))
 	mux.Handle("/login", http.HandlerFunc(loginHandler))
 
-	// Replies
-	// GET /replies is public, POST /replies requires auth
+	// Replies (GET public, POST auth)
 	mux.Handle("/replies", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			repliesHandler(w, r)
@@ -183,11 +183,9 @@ func main() {
 		}
 		requireAuth(http.HandlerFunc(repliesHandler)).ServeHTTP(w, r)
 	}))
-	// PUT/DELETE /replies/{id} require auth
 	mux.Handle("/replies/", requireAuth(http.HandlerFunc(replyByIDHandler)))
 
-	// Topics
-	// GET /topics is public, POST /topics requires auth
+	// Topics (GET public, POST auth)
 	mux.Handle("/topics", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			topicsHandler(w, r)
@@ -195,8 +193,6 @@ func main() {
 		}
 		requireAuth(http.HandlerFunc(topicsHandler)).ServeHTTP(w, r)
 	}))
-
-	// GET /topics/{id} public, PUT/DELETE require auth
 	mux.Handle("/topics/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			topicByIDHandler(w, r)
@@ -205,6 +201,25 @@ func main() {
 		requireAuth(http.HandlerFunc(topicByIDHandler)).ServeHTTP(w, r)
 	}))
 
+	mux.Handle("/search", http.HandlerFunc(searchHandler))
+
+	// uploads + avatar
+	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+	mux.Handle("/me/avatar", requireAuth(http.HandlerFunc(uploadAvatarHandler)))
+
+	mux.HandleFunc("/debug-origin", func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		allowed := os.Getenv("FRONTEND_ORIGIN")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"origin_raw":      origin,
+			"origin_trimmed":  strings.TrimRight(origin, "/"),
+			"allowed_raw":     allowed,
+			"allowed_trimmed": strings.TrimRight(allowed, "/"),
+			"method":          r.Method,
+		})
+	})
+
 	handler := cors(mux)
 
 	log.Println("🚀 API running at http://localhost:5000")
@@ -212,60 +227,16 @@ func main() {
 	if port == "" {
 		port = "5000"
 	}
-
-	mux.HandleFunc("/debug-origin", func(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	allowed := os.Getenv("FRONTEND_ORIGIN")
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"origin_raw":       origin,
-		"origin_trimmed":   strings.TrimRight(origin, "/"),
-		"allowed_raw":      allowed,
-		"allowed_trimmed":  strings.TrimRight(allowed, "/"),
-		"method":           r.Method,
-	})
-})
-
 	log.Fatal(http.ListenAndServe(":"+port, handler))
-
-	}
+}
 
 // ---------- CORS ----------
-// func cors(next http.Handler) http.Handler {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		origin := r.Header.Get("Origin")
-// 		if origin == "" {
-// 			next.ServeHTTP(w, r)
-// 			return
-// 		}
-
-// 		allowed := os.Getenv("FRONTEND_ORIGIN") // e.g. https://your-frontend.vercel.app
-// 		if allowed != "" && origin == allowed {
-// 			w.Header().Set("Access-Control-Allow-Origin", origin)
-// 			w.Header().Set("Vary", "Origin")
-// 		}
-
-
-// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-// 		if r.Method == http.MethodOptions {
-// 			w.WriteHeader(http.StatusOK)
-// 			return
-// 		}
-
-// 		w.Header().Set("Content-Type", "application/json")
-// 		next.ServeHTTP(w, r)
-// 	})
-// }
-
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
 
 		allowed1 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")
-		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/") // optional
+		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/")
 
 		isAllowed := origin != "" && (origin == allowed1 || (allowed2 != "" && origin == allowed2))
 
@@ -276,7 +247,6 @@ func cors(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 
-		// Preflight
 		if r.Method == http.MethodOptions {
 			if !isAllowed {
 				http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
@@ -296,16 +266,25 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-
-
 // ---------- /topics ----------
 func topicsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		rows, err := db.Query(`
-			SELECT t.id, t.title, t.content, t.user_id, u.username, t.created_at
+			SELECT
+				t.id,
+				t.title,
+				t.content,
+				t.user_id,
+				u.username,
+				COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+				COUNT(r.id) AS reply_count
 			FROM topics t
 			JOIN users u ON u.id = t.user_id
+			LEFT JOIN replies r ON r.topic_id = t.id
+			GROUP BY
+				t.id, t.title, t.content, t.user_id, u.username, u.avatar_url, t.created_at
 			ORDER BY t.created_at DESC
 		`)
 		if err != nil {
@@ -318,13 +297,23 @@ func topicsHandler(w http.ResponseWriter, r *http.Request) {
 		var topics []Topic
 		for rows.Next() {
 			var t Topic
-			if err := rows.Scan(&t.ID, &t.Title, &t.Content, &t.UserID, &t.AuthorName, &t.CreatedAt); err != nil {
+			if err := rows.Scan(
+				&t.ID,
+				&t.Title,
+				&t.Content,
+				&t.UserID,
+				&t.AuthorName,
+				&t.AuthorAvatarURL,
+				&t.CreatedAt,
+				&t.ReplyCount,
+			); err != nil {
+				log.Println("TOPICS SCAN ERROR:", err)
 				http.Error(w, err.Error(), 500)
 				return
 			}
 			topics = append(topics, t)
 		}
-		json.NewEncoder(w).Encode(topics)
+		_ = json.NewEncoder(w).Encode(topics)
 
 	case http.MethodPost:
 		uid := getUserID(r)
@@ -333,29 +322,59 @@ func topicsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var t Topic
-		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		var payload struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "Invalid JSON", 400)
 			return
 		}
-		if strings.TrimSpace(t.Title) == "" || strings.TrimSpace(t.Content) == "" {
+		if strings.TrimSpace(payload.Title) == "" || strings.TrimSpace(payload.Content) == "" {
 			http.Error(w, "title and content required", 400)
 			return
 		}
 
-		err := db.QueryRow(`
+		var topicID int
+		if err := db.QueryRow(`
 			INSERT INTO topics (title, content, user_id, created_at)
 			VALUES ($1, $2, $3, NOW())
-			RETURNING id, user_id, created_at
-		`, t.Title, t.Content, uid).Scan(&t.ID, &t.UserID, &t.CreatedAt)
-		if err != nil {
+			RETURNING id
+		`, payload.Title, payload.Content, uid).Scan(&topicID); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
-		_ = db.QueryRow(`SELECT username FROM users WHERE id=$1`, t.UserID).Scan(&t.AuthorName)
+		// Return fully formatted record (with avatar_url + ISO created_at)
+		var t Topic
+		if err := db.QueryRow(`
+			SELECT
+				t.id,
+				t.title,
+				t.content,
+				t.user_id,
+				u.username,
+				COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+				0 AS reply_count
+			FROM topics t
+			JOIN users u ON u.id = t.user_id
+			WHERE t.id=$1
+		`, topicID).Scan(
+			&t.ID,
+			&t.Title,
+			&t.Content,
+			&t.UserID,
+			&t.AuthorName,
+			&t.AuthorAvatarURL,
+			&t.CreatedAt,
+			&t.ReplyCount,
+		); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 
-		json.NewEncoder(w).Encode(t)
+		_ = json.NewEncoder(w).Encode(t)
 
 	default:
 		http.Error(w, "Method not allowed", 405)
@@ -374,17 +393,27 @@ func topicByIDHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		var t Topic
+		// include avatar_url + ISO created_at
 		row := db.QueryRow(`
-			SELECT t.id, t.title, t.content, t.user_id, u.username, t.created_at
+			SELECT
+				t.id, t.title, t.content, t.user_id,
+				u.username, COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+				(SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id) AS reply_count
 			FROM topics t
 			JOIN users u ON u.id = t.user_id
 			WHERE t.id=$1
 		`, id)
-		if err := row.Scan(&t.ID, &t.Title, &t.Content, &t.UserID, &t.AuthorName, &t.CreatedAt); err != nil {
+
+		if err := row.Scan(
+			&t.ID, &t.Title, &t.Content, &t.UserID,
+			&t.AuthorName, &t.AuthorAvatarURL,
+			&t.CreatedAt, &t.ReplyCount,
+		); err != nil {
 			http.Error(w, "Topic not found", 404)
 			return
 		}
-		json.NewEncoder(w).Encode(t)
+		_ = json.NewEncoder(w).Encode(t)
 
 	case http.MethodPut:
 		uid := getUserID(r)
@@ -412,21 +441,32 @@ func topicByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec(`UPDATE topics SET title=$1, content=$2 WHERE id=$3`, payload.Title, payload.Content, id)
-		if err != nil {
+		if _, err := db.Exec(`UPDATE topics SET title=$1, content=$2 WHERE id=$3`, payload.Title, payload.Content, id); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
+		// return updated record
 		var t Topic
-		_ = db.QueryRow(`
-			SELECT t.id, t.title, t.content, t.user_id, u.username, t.created_at
+		if err := db.QueryRow(`
+			SELECT
+				t.id, t.title, t.content, t.user_id,
+				u.username, COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+				(SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id) AS reply_count
 			FROM topics t
 			JOIN users u ON u.id = t.user_id
 			WHERE t.id=$1
-		`, id).Scan(&t.ID, &t.Title, &t.Content, &t.UserID, &t.AuthorName, &t.CreatedAt)
+		`, id).Scan(
+			&t.ID, &t.Title, &t.Content, &t.UserID,
+			&t.AuthorName, &t.AuthorAvatarURL,
+			&t.CreatedAt, &t.ReplyCount,
+		); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 
-		json.NewEncoder(w).Encode(t)
+		_ = json.NewEncoder(w).Encode(t)
 
 	case http.MethodDelete:
 		uid := getUserID(r)
@@ -465,7 +505,14 @@ func repliesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		rows, err := db.Query(`
-			SELECT r.id, r.topic_id, r.content, r.user_id, u.username, r.created_at
+			SELECT
+				r.id,
+				r.topic_id,
+				r.content,
+				r.user_id,
+				u.username,
+				COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
 			FROM replies r
 			JOIN users u ON u.id = r.user_id
 			WHERE r.topic_id=$1
@@ -481,14 +528,22 @@ func repliesHandler(w http.ResponseWriter, r *http.Request) {
 		var replies []Reply
 		for rows.Next() {
 			var rp Reply
-			if err := rows.Scan(&rp.ID, &rp.TopicID, &rp.Content, &rp.UserID, &rp.AuthorName, &rp.CreatedAt); err != nil {
+			if err := rows.Scan(
+				&rp.ID,
+				&rp.TopicID,
+				&rp.Content,
+				&rp.UserID,
+				&rp.AuthorName,
+				&rp.AuthorAvatarURL,
+				&rp.CreatedAt,
+			); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
 			replies = append(replies, rp)
 		}
 
-		json.NewEncoder(w).Encode(replies)
+		_ = json.NewEncoder(w).Encode(replies)
 
 	case http.MethodPost:
 		uid := getUserID(r)
@@ -497,29 +552,57 @@ func repliesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var rp Reply
-		if err := json.NewDecoder(r.Body).Decode(&rp); err != nil {
+		var payload struct {
+			TopicID int    `json:"topic_id"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "Invalid JSON", 400)
 			return
 		}
-		if rp.TopicID == 0 || strings.TrimSpace(rp.Content) == "" {
+		if payload.TopicID == 0 || strings.TrimSpace(payload.Content) == "" {
 			http.Error(w, "topic_id and content required", 400)
 			return
 		}
 
-		err := db.QueryRow(`
+		var replyID int
+		if err := db.QueryRow(`
 			INSERT INTO replies (topic_id, content, user_id, created_at)
 			VALUES ($1, $2, $3, NOW())
-			RETURNING id, user_id, created_at
-		`, rp.TopicID, rp.Content, uid).Scan(&rp.ID, &rp.UserID, &rp.CreatedAt)
-		if err != nil {
+			RETURNING id
+		`, payload.TopicID, payload.Content, uid).Scan(&replyID); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
-		_ = db.QueryRow(`SELECT username FROM users WHERE id=$1`, rp.UserID).Scan(&rp.AuthorName)
+		// Return fully formatted record (with avatar_url + ISO created_at)
+		var rp Reply
+		if err := db.QueryRow(`
+			SELECT
+				r.id,
+				r.topic_id,
+				r.content,
+				r.user_id,
+				u.username,
+				COALESCE(u.avatar_url, '') AS avatar_url,
+				to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+			FROM replies r
+			JOIN users u ON u.id = r.user_id
+			WHERE r.id=$1
+		`, replyID).Scan(
+			&rp.ID,
+			&rp.TopicID,
+			&rp.Content,
+			&rp.UserID,
+			&rp.AuthorName,
+			&rp.AuthorAvatarURL,
+			&rp.CreatedAt,
+		); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 
-		json.NewEncoder(w).Encode(rp)
+		_ = json.NewEncoder(w).Encode(rp)
 
 	default:
 		http.Error(w, "Method not allowed", 405)
@@ -565,13 +648,12 @@ func replyByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec(`UPDATE replies SET content=$1 WHERE id=$2`, payload.Content, replyID)
-		if err != nil {
+		if _, err := db.Exec(`UPDATE replies SET content=$1 WHERE id=$2`, payload.Content, replyID); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":      replyID,
 			"content": payload.Content,
 		})
@@ -587,8 +669,7 @@ func replyByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec(`DELETE FROM replies WHERE id=$1`, replyID)
-		if err != nil {
+		if _, err := db.Exec(`DELETE FROM replies WHERE id=$1`, replyID); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -629,9 +710,7 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 		 RETURNING id, created_at`,
 		user.Username, user.Email, string(hashed),
 	).Scan(&user.ID, &user.CreatedAt)
-
 	if err != nil {
-		// Handle duplicate username/email
 		if pqErr, ok := err.(*pq.Error); ok {
 			if pqErr.Constraint == "users_username_key" {
 				http.Error(w, "Username already exists", http.StatusConflict)
@@ -642,15 +721,13 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-
 		log.Println("REGISTER DB ERROR:", err)
 		http.Error(w, "Failed to create account", http.StatusInternalServerError)
 		return
 	}
 
-
 	user.Password = ""
-	json.NewEncoder(w).Encode(user)
+	_ = json.NewEncoder(w).Encode(user)
 }
 
 // ---------- /login ----------
@@ -673,10 +750,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	var user User
 	var hash string
 	err := db.QueryRow(
-		`SELECT id, username, email, password_hash, created_at
+		`SELECT id, username, email, COALESCE(avatar_url, ''), password_hash, created_at
 		 FROM users WHERE email=$1`,
 		req.Email,
-	).Scan(&user.ID, &user.Username, &user.Email, &hash, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.AvatarURL, &hash, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		http.Error(w, "Invalid email or password", 401)
@@ -699,9 +776,128 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"user":  user,
 		"token": token,
 	})
 }
 
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		_ = json.NewEncoder(w).Encode([]Topic{})
+		return
+	}
+
+	rows, err := db.Query(`
+		SELECT
+			t.id, t.title, t.content, t.user_id,
+			u.username,
+			COALESCE(u.avatar_url, '') AS avatar_url,
+			to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+		FROM topics t
+		JOIN users u ON u.id = t.user_id
+		WHERE
+			t.title ILIKE '%' || $1 || '%' OR
+			t.content ILIKE '%' || $1 || '%' OR
+			u.username ILIKE '%' || $1 || '%'
+		ORDER BY t.created_at DESC
+	`, q)
+	if err != nil {
+		log.Println("SEARCH ERROR:", err)
+		http.Error(w, "Search failed", 500)
+		return
+	}
+	defer rows.Close()
+
+	var results []Topic
+	for rows.Next() {
+		var t Topic
+		if err := rows.Scan(
+			&t.ID,
+			&t.Title,
+			&t.Content,
+			&t.UserID,
+			&t.AuthorName,
+			&t.AuthorAvatarURL,
+			&t.CreatedAt,
+		); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		results = append(results, t)
+	}
+
+	_ = json.NewEncoder(w).Encode(results)
+}
+
+// ---------- /me/avatar ----------
+func uploadAvatarHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	uid := getUserID(r)
+	if uid == 0 {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
+
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		http.Error(w, "File too large / invalid form", 400)
+		return
+	}
+
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		http.Error(w, "Missing file field: avatar", 400)
+		return
+	}
+	defer file.Close()
+
+	ct := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "image/") {
+		http.Error(w, "Only image uploads are allowed", 400)
+		return
+	}
+
+	if err := os.MkdirAll("./uploads", 0755); err != nil {
+		http.Error(w, "Failed to create uploads dir", 500)
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext == "" || len(ext) > 10 {
+		ext = ".png"
+	}
+
+	filename := fmt.Sprintf("u%d_%d%s", uid, time.Now().UnixNano(), ext)
+	dstPath := filepath.Join("./uploads", filename)
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		http.Error(w, "Failed to save file", 500)
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		http.Error(w, "Failed to write file", 500)
+		return
+	}
+
+	avatarURL := "/uploads/" + filename
+
+	if _, err := db.Exec(`UPDATE users SET avatar_url=$1 WHERE id=$2`, avatarURL, uid); err != nil {
+		http.Error(w, "Failed to update avatar_url", 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"avatar_url": avatarURL,
+	})
+}

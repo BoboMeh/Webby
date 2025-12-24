@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import.meta.env.VITE_API_URL;
+import Header from "../components/Header";
 
 export default function Login({ setAuth }) {
   const navigate = useNavigate();
@@ -40,6 +41,7 @@ export default function Login({ setAuth }) {
   };
 
   return (
+    <><Header />
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="w-[350px] rounded-md shadow-md p-6">
         <h2 className="text-2xl font-semibold mb-6">Login</h2>
@@ -51,8 +53,7 @@ export default function Login({ setAuth }) {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-yellow-400"
-        />
+          className="w-full mb-4 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400" />
 
         <div className="relative mb-4">
           <input
@@ -60,8 +61,7 @@ export default function Login({ setAuth }) {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-yellow-400"
-          />
+            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400" />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
@@ -73,18 +73,18 @@ export default function Login({ setAuth }) {
 
         <button
           onClick={handleSubmit}
-          className="w-full bg-yellow-400 hover:bg-yellow-500 text-white font-semibold py-3 rounded-md transition"
+          className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold py-3 rounded-md transition"
         >
           Login
         </button>
 
         <p className="text-sm text-center mt-4">
           Not registered yet?{" "}
-          <Link to="/register" className="text-yellow-400 cursor-pointer hover:underline">
+          <Link to="/register" className="text-[#2563EB] cursor-pointer hover:underline">
             Create Account
           </Link>
         </p>
       </div>
-    </div>
+    </div></>
   );
 }
