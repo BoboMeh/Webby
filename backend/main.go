@@ -232,32 +232,54 @@ func main() {
 
 // ---------- CORS ----------
 func cors(next http.Handler) http.Handler {
-  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
 
-    origin := r.Header.Get("Origin")
+		allowed1 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")
+		allowed2 := strings.TrimRight(os.Getenv("FRONTEND_ORIGIN_2"), "/")
 
-    allowed := map[string]bool{
-      "https://webby-frontend.onrender.com": true,
-      "http://localhost:5173": true,
-    }
+		// ✅ Decide if origin is allowed
+		isAllowed := false
+		if origin != "" {
+			if (allowed1 != "" && origin == allowed1) || (allowed2 != "" && origin == allowed2) {
+				isAllowed = true
+			}
 
-    if origin != "" && allowed[origin] {
-      w.Header().Set("Access-Control-Allow-Origin", origin)
-      w.Header().Set("Vary", "Origin")
-      w.Header().Set("Access-Control-Allow-Credentials", "true")
-    }
+			// OPTIONAL: fail-open during testing if you forgot env vars
+			// if allowed1 == "" && allowed2 == "" {
+			// 	isAllowed = true
+			// }
+		}
 
-    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		// ✅ Always set CORS headers when allowed (including OPTIONS responses)
+		if origin != "" && isAllowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+		}
 
-    if r.Method == http.MethodOptions {
-      w.WriteHeader(http.StatusNoContent)
-      return
-    }
+		// ✅ Preflight
+		if r.Method == http.MethodOptions {
+			if origin != "" && !isAllowed {
+				http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 
-    next.ServeHTTP(w, r)
-  })
+		// ✅ Block normal requests if origin is present but not allowed
+		if origin != "" && !isAllowed {
+			http.Error(w, "CORS blocked for origin: "+origin, http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
+
 
 
 // ---------- /topics ----------
