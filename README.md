@@ -1,9 +1,9 @@
-Overview
+# Overview
 
 Webby is a full-stack web forum that allows users to create accounts, start discussion threads, and participate in conversations in a blog-style format.
 It focuses on clean UI, secure authentication, and scalable backend design.
 
-Features
+## Features
 
 User registration and login (JWT authentication)
 
